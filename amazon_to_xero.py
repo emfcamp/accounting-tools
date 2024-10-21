@@ -1,9 +1,14 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "click",
+#     "pandas",
+# ]
+# ///
 from collections import defaultdict
 import pandas as pd
 import click
 import csv
-
-from regex import P
 
 XERO_BILL_IMPORT_FIELDS = [
     "*ContactName",
@@ -34,14 +39,27 @@ XERO_BILL_IMPORT_FIELDS = [
     "Currency",
 ]
 
+ACCOUNTS = {
+    "EMF SHOP": "314",
+    "Shop": "314",
+    "volunteer kitchen": "383",
+    "Kitchen": "383",
+    "Youth": "379",
+    "Team Design": "389",
+    "Bar": "312",
+    "NOC": "342",
+    "Films": "398",
+    "Content": "398",
+    "Arcade": "398",
+}
+
 
 def get_account_code(dept):
-    return {
-        "EMF SHOP": "314",
-        "volunteer kitchen": "383",
-        "Youth": "379",
-        "Team Design": "389",
-    }.get(dept, "325")
+    if dept in ACCOUNTS:
+        return ACCOUNTS[dept]
+    else:
+        click.secho(f"Unknown department: {dept}")
+        return "325"
 
 
 @click.command()
@@ -70,6 +88,7 @@ def amazon_to_xero(shipments_file, output_file, invoice):
             if line["Item subtotal sum"] < 0:
                 click.secho(f"Negative item balance: {line}")
                 return
+
             line_data = {
                 "*ContactName": "Amazon",
                 "*InvoiceNumber": line["Order ID"],
@@ -77,7 +96,7 @@ def amazon_to_xero(shipments_file, output_file, invoice):
                 "*DueDate": line["Order Date"].strftime("%d/%m/%Y"),
                 "*Quantity": 1,
                 "*UnitAmount": round(line["Item subtotal sum"], 2),
-                "*AccountCode": get_account_code(line["Customised Field"]),
+                "*AccountCode": get_account_code(line["Customised Field 1"]),
                 "Description": line["Title"],
                 "TaxAmount": round(line["Item VAT"], 2),
             }
@@ -95,20 +114,22 @@ def amazon_to_xero(shipments_file, output_file, invoice):
 
             output_rows.append(line_data)
 
-    for invoice_id, total in totals.items():
-        output_rows.append(
-            {
-                "*ContactName": "Amazon",
-                "*InvoiceNumber": invoice_id,
-                "*InvoiceDate": dates[invoice_id].strftime("%d/%m/%Y"),
-                "*DueDate": dates[invoice_id].strftime("%d/%m/%Y"),
-                "*Quantity": 1,
-                "*UnitAmount": round(-total, 2),
-                "*AccountCode": "812",
-                "Description": f"Amazon Order {invoice_id}",
-                "*TaxType": "No VAT",
-            }
-        )
+    # This is for when we were using the control account, but I think this is not necessary
+    #
+    # for invoice_id, line_total in totals.items():
+    #     output_rows.append(
+    #         {
+    #             "*ContactName": "Amazon",
+    #             "*InvoiceNumber": invoice_id,
+    #             "*InvoiceDate": dates[invoice_id].strftime("%d/%m/%Y"),
+    #             "*DueDate": dates[invoice_id].strftime("%d/%m/%Y"),
+    #             "*Quantity": 1,
+    #             "*UnitAmount": round(-line_total, 2),
+    #             "*AccountCode": "812",
+    #             "Description": f"Amazon Order {invoice_id}",
+    #             "*TaxType": "No VAT",
+    #         }
+    #     )
 
     output_rows = sorted(
         output_rows,
@@ -124,7 +145,7 @@ def amazon_to_xero(shipments_file, output_file, invoice):
         fg="green",
     )
     click.secho(
-        "You should check the above numbers match your outstanding account balance.",
+        "Note that unit prices are *exclusive* of VAT when importing into Xero",
         fg="yellow",
     )
 
